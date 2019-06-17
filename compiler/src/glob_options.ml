@@ -5,6 +5,10 @@ let outfile = ref ""
 let latexfile = ref ""
 let typeonly = ref false
 let debug = ref false
+(*reg allocation debug*)
+let regdebug = ref ""
+(*not use regs in allocation*)
+let notuseregs = ref ""
 let coqfile = ref ""
 let coqonly = ref false
 let print_list = ref []
@@ -86,6 +90,10 @@ let options = [
     "-o"       , Arg.Set_string outfile, "[filename]: name of the output file";
     "-typeonly", Arg.Set typeonly      , ": stop after typechecking";
     "-debug"   , Arg.Set debug         , ": print debug information";
+    (*flag for register allocation debug*)
+    "-regdebug" , Arg.Set_string regdebug, "[filename]: print register allocation debug to filename";
+    (*flag to not use registers in allocation*)
+    "-notuseregs" , Arg.Set_string notuseregs, "[reg0 reg1 ...]: print register allocation debug to filename";
     "-latex"     , Arg.Set_string latexfile, "[filename]: generate the corresponding LATEX file";
     "-coq"     , Arg.Set_string coqfile, "[filename]: generate the corresponding coq file";
     "-coqonly" , Arg.String set_coqonly, "[filename]: generate the corresponding coq file, and exit";

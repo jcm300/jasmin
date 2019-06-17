@@ -405,12 +405,21 @@ let fdef_of_cfdef tbl (fn, fd) =
     f_ret  = List.map (vari_of_cvari tbl) fd.C.f_res;
   }
 
+(*DEBUG: remove reg in flag for allocation*)
+let changeAllocatable notuseregs l =
+  let notuseregsL = Str.split (Str.regexp "[ \n\r\x0c\t]+") notuseregs in
+  List.filter (fun x -> not (List.exists (fun y -> x.v_name = y) notuseregsL)) l 
+
 let cprog_of_prog info p =
   let tbl = empty_tbl info in
+  (*DEBUG: remove reg in flag for allocation*)
+  Regalloc.X64.all_registers := changeAllocatable !Glob_options.notuseregs !Regalloc.X64.all_registers;
+  Regalloc.X64.allocatable := changeAllocatable !Glob_options.notuseregs !Regalloc.X64.allocatable;
+  Regalloc.X64.xmm_allocatable := changeAllocatable !Glob_options.notuseregs !Regalloc.X64.xmm_allocatable;
   (* First add registers *)
   List.iter
     (fun x -> ignore (cvar_of_reg tbl x))
-    Regalloc.X64.all_registers;
+    !Regalloc.X64.all_registers;
   let fds = List.map (cfdef_of_fdef tbl) (snd p) in
   let gd  = List.map cgd_of_gd (fst p) in
   tbl, { C.p_globs = gd; C.p_funcs = fds }

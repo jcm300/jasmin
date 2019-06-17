@@ -341,7 +341,7 @@ struct
   let xmm14 = V.mk "XMM14" Reg (Bty (U U256)) L._dummy
   let xmm15 = V.mk "XMM15" Reg (Bty (U U256)) L._dummy
 
-  let allocatable = [
+  let allocatable = ref [
       rax; rcx; rdx;
       rsi; rdi;
       r8; r9; r10; r11;
@@ -350,7 +350,7 @@ struct
       r12; r13; r14; r15
     ]
 
-  let xmm_allocatable = [
+  let xmm_allocatable = ref [
     xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7;
     xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15
   ]
@@ -385,7 +385,7 @@ struct
 
   let flags = [f_c; f_d; f_o; f_p; f_s; f_z]
 
-  let all_registers = reserved @ allocatable @ xmm_allocatable @ flags
+  let all_registers = ref (reserved @ !allocatable @ !xmm_allocatable @ flags)
 
   let forced_registers translate_var loc (vars: int Hv.t) (cnf: conflicts)
       (lvs: 'ty glvals) (op: sopn) (es: 'ty gexprs)
@@ -517,8 +517,8 @@ let greedy_allocation
       let has_no_conflict v = not (List.mem (Some v) c) in
       let bank =
         match kind_of_type (type_of_vars vi) with
-        | Word -> X64.allocatable
-        | Vector -> X64.xmm_allocatable
+        | Word -> !X64.allocatable
+        | Vector -> !X64.xmm_allocatable
         | Unknown ty -> hierror "Register allocation: no register bank for type %a" Printer.pp_ty ty
       in
       match List.filter has_no_conflict bank with
@@ -542,15 +542,84 @@ let subst_of_allocation (vars: int Hv.t)
     Pvar (q w)
   with Not_found -> Pvar (q v)
 
+(*DEBUG*)
+let print_v_kind = function
+    | Const -> "Const"
+    | Stack -> "Stack"
+    | Reg -> "Reg"
+    | Inline -> "Inline"
+    | Global -> "Global"
+
+(*DEBUG*)
+let print_dloc dloc =
+    let ds = dloc.L.loc_start in
+    let de = dloc.L.loc_end in
+    String.concat " " ["\t\tStart:"; "\n\t\t\tLine"; Pervasives.string_of_int (fst ds); "\n\t\t\tChar"; Pervasives.string_of_int (snd ds); "\n\t\tEnd:"; "\n\t\t\tLine"; Pervasives.string_of_int (fst de); "\n\t\t\tChar"; Pervasives.string_of_int (snd de);]
+
+(*DEBUG*)
+let print_vars vars openFile =
+    let lvars = Hv.to_list vars in
+    let form = ("Variable:\n\tName: %s" ^^ "\n\tId: %d" ^^ "\n\tKind: %s" ^^ "\n\tFile Location:\n%s" ^^ "\n\tFuture Reg: %d" ^^ "\n") in
+    let st = List.map (fun (f,s) -> Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) (print_v_kind f.v_kind) (print_dloc f.v_dloc) s) lvars in
+    Printf.fprintf openFile "%s" (String.concat "\n" st)
+
+(*DEBUG*)
+let print_collect_vars o vars nv =
+    match o with
+    | None -> ()
+    | Some openFile -> (Printf.fprintf openFile "Collected Variables: %d\n" nv;
+                        print_vars vars openFile)
+
+(*DEBUG*)
+(*let print_equality_constraints o eqc tr fr =
+    match o with
+    | None -> ()
+    | Some openFile -> (Printf.fprintf openFile "\nEquality Constraints:\n";
+                        let st = 
+                        Printf.fprintf openFile "%s %s %s" eqc tr fr;)*)
+
+(*DEBUG*)
+let print_normalize_vars o vars =
+    match o with
+    | None -> ()
+    | Some openFile -> (Printf.fprintf openFile "\nNormalized Variables:\n";
+                        print_vars vars openFile)
+
+(*DEBUG*)
+let print_conflicts o conflicts =
+    match o with
+    | None -> ()
+    | Some openFile -> (Printf.fprintf openFile "\nConflicts:\n";
+                        Mint.iter (fun x -> 
+                            (fun y -> 
+                                Printf.fprintf openFile "%d -> " x; 
+                                IntSet.iter (fun d -> Printf.fprintf openFile "%d\t" d) y;
+                                Printf.fprintf openFile "\n"
+                            )) conflicts
+                        )
+
 let regalloc translate_var (f: 'info func) : unit func =
   let f = fill_in_missing_names f in
   let f = Ssa.split_live_ranges false f in
   Glob_options.eprint Compiler.Splitting  (Printer.pp_func ~debug:true) f;
   let lf = Liveness.live_fd true f in
   let vars, nv = collect_variables false f in
+  (* DEBUG print *)
+  let openFile =
+      if !Glob_options.regdebug <> ""
+      then Some (open_out !Glob_options.regdebug)
+      else None
+  in
+  print_collect_vars openFile vars nv ;
   let eqc, tr, fr = collect_equality_constraints "Regalloc" x86_equality_constraints vars nv f in
+  (*DEBUG*)
+  (*print_equality_constraints openFile eqc tr fr ;*)
   let vars = normalize_variables vars eqc in
+  (*DEBUG*)
+  print_normalize_vars openFile vars ;
   let conflicts = collect_conflicts vars tr lf in
+  (*DEBUG*)
+  print_conflicts openFile conflicts ;
   let a =
     allocate_forced_registers translate_var vars conflicts f IntMap.empty |>
     greedy_allocation vars nv conflicts fr |>
