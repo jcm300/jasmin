@@ -544,24 +544,29 @@ let subst_of_allocation (vars: int Hv.t)
 
 (*DEBUG*)
 let print_allocation l v m w =
-  let elem = List.find (fun e -> fst e = Prog.int_of_uid v.v_id) l in
-  if snd elem <> ""
-  then (
-    let print_loc loc = if fst loc.L.loc_start <> -1 
-                        then L.tostring loc
-                        else ""
-    in
-    let print_locs loc1 loc2 = 
-      let l1 = print_loc loc1 in
-      let l2 = print_loc loc2 in
-      if l1 <> "" then
-        if l2 <> "" then Printf.sprintf "\nFile Location: %s and %s" l1 l2
-                    else Printf.sprintf "\nFile Location: %s" l1
-      else 
-        if l2 <> "" then Printf.sprintf "\nFile Location: %s" l2
-        else ""
-    in
-    Printf.sprintf "%s%s\nTo: %s\n\n" (snd elem) (print_locs v.v_dloc m) w.v_name
+  if List.exists (fun e -> fst e = Prog.int_of_uid v.v_id) !l
+  then ( 
+    let elem = List.find (fun e -> fst e = Prog.int_of_uid v.v_id) !l in
+    if snd elem <> ""
+    then (
+      let print_loc loc = if fst loc.L.loc_start <> -1 
+                          then L.tostring loc
+                          else ""
+      in
+      let print_locs loc1 loc2 = 
+        let l1 = print_loc loc1 in
+        let l2 = print_loc loc2 in
+        if l1 <> "" then
+          if l2 <> "" then Printf.sprintf "\nFile Location: %s and %s" l1 l2
+                      else Printf.sprintf "\nFile Location: %s" l1
+        else 
+          if l2 <> "" then Printf.sprintf "\nFile Location: %s" l2
+          else ""
+      in
+      l := List.filter (fun e -> fst e <> fst elem) !l;
+      Printf.sprintf "%s%s\nTo: %s\n\n" (snd elem) (print_locs v.v_dloc m) w.v_name
+      )
+    else ""
     )
   else ""
 
@@ -623,10 +628,11 @@ let regalloc translate_var (f: 'info func) : unit func =
   (*DEBUG*)
   let listAux = print_normalize_vars listAux vars in
   let conflicts = collect_conflicts vars tr lf in
+  let listRef = ref listAux in
   let a =
     allocate_forced_registers translate_var vars conflicts f IntMap.empty |>
     greedy_allocation vars nv conflicts fr |>
-    subst_of_allocationP openFile listAux vars
+    subst_of_allocationP openFile listRef vars
   in Subst.gsubst_func (fun ty -> ty) a f
     |> Ssa.remove_phi_nodes
 
