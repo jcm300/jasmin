@@ -543,31 +543,35 @@ let subst_of_allocation (vars: int Hv.t)
   with Not_found -> Pvar (q v)
 
 (*DEBUG*)
-let print_allocation o v m w =
+let print_allocation l v m w =
+  let elem = List.find (fun e -> fst e = Prog.int_of_uid v.v_id) l in
+  if snd elem <> ""
+  then (
+    let print_loc loc = if fst loc.L.loc_start <> -1 
+                        then L.tostring loc
+                        else ""
+    in
+    let print_locs loc1 loc2 = 
+      let l1 = print_loc loc1 in
+      let l2 = print_loc loc2 in
+      if l1 <> "" then
+        if l2 <> "" then Printf.sprintf "\nFile Location: %s and %s" l1 l2
+                    else Printf.sprintf "\nFile Location: %s" l1
+      else 
+        if l2 <> "" then Printf.sprintf "\nFile Location: %s" l2
+        else ""
+    in
+    Printf.sprintf "%s%s\nTo: %s\n\n" (snd elem) (print_locs v.v_dloc m) w.v_name
+    )
+  else ""
+
+let printToFile o s =
   match o with
   | None -> ()
-  | Some openFile -> (
-                      let form = ("\tName: %s" ^^ "\n\tId: %d") in
-                      let print_loc loc = if fst loc.L.loc_start <> -1 
-                                          then L.tostring loc
-                                          else ""
-                      in
-                      let print_locs loc1 loc2 = 
-                        let l1 = print_loc loc1 in
-                        let l2 = print_loc loc2 in
-                        if l1 <> "" then
-                          if l2 <> "" then Printf.sprintf "\n\tFile Location: %s and %s" l1 l2
-                                      else Printf.sprintf "\n\tFile Location: %s" l1
-                        else 
-                          if l2 <> "" then Printf.sprintf "\n\tFile Location: %s" l2
-                          else ""
-                      in
-                      let st f = Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) in
-                      Printf.fprintf openFile "%s%s\n\tTo: %s\n\n" (st v) (print_locs v.v_dloc m) w.v_name
-                    )
+  | Some openFile -> Printf.fprintf openFile "%s" s
 
 (*DEBUG*)
-let subst_of_allocationP o (vars: int Hv.t)
+let subst_of_allocationP o l (vars: int Hv.t)
     (a: allocation) (v: var_i) : expr =
   let m = L.loc v in
   let v = L.unloc v in
@@ -576,36 +580,30 @@ let subst_of_allocationP o (vars: int Hv.t)
     let i = Hv.find vars v in
     let w = IntMap.find i a in
     (*DEBUG*)
-    let () = print_allocation o v m w in
+    let () = printToFile o (print_allocation l v m w) in
     Pvar (q w)
   with Not_found -> Pvar (q v)
 
-let print_loc loc =
-  if fst loc.L.loc_start <> -1 
-  then Printf.sprintf "\n\tFile Location: %s" (L.tostring loc)
-  else ""
-
 (*DEBUG*)
-let print_vars vars openFile =
+let print_vars vars =
     let lvars = Hv.to_list vars in
-    let form = ("\tName: %s" ^^ "\n\tId: %d" ^^ "%s" ^^ "\n\tLive Range: %d" ^^ "\n") in
-    let st = List.map (fun (f,s) -> Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) (print_loc f.v_dloc) s) lvars in
-    Printf.fprintf openFile "%s" (String.concat "\n" st)
+    let form = ("Name: %s" ^^ "\nId: %d" ^^ "\nCollected Live Range: %d") in
+    List.map (fun (f,s) -> (Prog.int_of_uid f.v_id, Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) s, s)) lvars
+
+let func f s l =
+    let v_id = Prog.int_of_uid f.v_id in
+    let elem = List.find (fun (id,_,_) -> id = v_id) l in
+    let (id, str, lr) = elem in
+    if s = lr
+    then
+        let form = ("\nNormalized Live Range: " ^^ "%d") in
+        (id, String.concat "" [str; Printf.sprintf form s])
+    else (id,"")
 
 (*DEBUG*)
-let print_collect_vars o vars nv =
-    match o with
-    | None -> ()
-    | Some openFile -> (Printf.fprintf openFile "Collected Variables: %d\n" nv;
-                        print_vars vars openFile)
-
-(*DEBUG*)
-let print_normalize_vars o vars =
-    match o with
-    | None -> ()
-    | Some openFile -> (Printf.fprintf openFile "\nNormalized Variables:\n";
-                        print_vars vars openFile;
-                        Printf.fprintf openFile "\nAllocation:\n")
+let print_normalize_vars l vars =
+    let lvars = Hv.to_list vars in
+    List.map (fun (f,s) -> func f s l) lvars
 
 let regalloc translate_var (f: 'info func) : unit func =
   let f = fill_in_missing_names f in
@@ -619,16 +617,16 @@ let regalloc translate_var (f: 'info func) : unit func =
       then Some (open_out !Glob_options.regdebug)
       else None
   in
-  print_collect_vars openFile vars nv ;
+  let listAux = print_vars vars in
   let eqc, tr, fr = collect_equality_constraints "Regalloc" x86_equality_constraints vars nv f in
   let vars = normalize_variables vars eqc in
   (*DEBUG*)
-  print_normalize_vars openFile vars ;
+  let listAux = print_normalize_vars listAux vars in
   let conflicts = collect_conflicts vars tr lf in
   let a =
     allocate_forced_registers translate_var vars conflicts f IntMap.empty |>
     greedy_allocation vars nv conflicts fr |>
-    subst_of_allocationP openFile vars
+    subst_of_allocationP openFile listAux vars
   in Subst.gsubst_func (fun ty -> ty) a f
     |> Ssa.remove_phi_nodes
 
