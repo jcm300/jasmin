@@ -544,9 +544,11 @@ let subst_of_allocation (vars: int Hv.t)
 
 (*DEBUG*)
 let print_allocation l v m w =
+  (*DEBUG - check if id exists on list*)
   if List.exists (fun e -> fst e = Prog.int_of_uid v.v_id) !l
   then ( 
     let elem = List.find (fun e -> fst e = Prog.int_of_uid v.v_id) !l in
+    (*DEBUG - check if elem is valid (if is not a pointer to a normalized value)*)
     if snd elem <> ""
     then (
       let print_loc loc = if fst loc.L.loc_start <> -1 
@@ -563,6 +565,7 @@ let print_allocation l v m w =
           if l2 <> "" then Printf.sprintf "\nFile Location: %s" l2
           else ""
       in
+      (*DEBUG - remove elem from list, in order to dont print duplicated vars (with same id) *)
       l := List.filter (fun e -> fst e <> fst elem) !l;
       Printf.sprintf "%s%s\nTo: %s\n\n" (snd elem) (print_locs v.v_dloc m) w.v_name
       )
@@ -570,6 +573,7 @@ let print_allocation l v m w =
     )
   else ""
 
+(*DEBUG*)
 let printToFile o s =
   match o with
   | None -> ()
@@ -595,10 +599,12 @@ let print_vars vars =
     let form = ("Name: %s" ^^ "\nId: %d" ^^ "\nCollected Live Range: %d") in
     List.map (fun (f,s) -> (Prog.int_of_uid f.v_id, Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) s, s)) lvars
 
+(*DEBUG*)
 let func f s l =
     let v_id = Prog.int_of_uid f.v_id in
     let elem = List.find (fun (id,_,_) -> id = v_id) l in
     let (id, str, lr) = elem in
+    (*DEBUG - check if is not a pointer to a normalized value*)
     if s = lr
     then
         let form = ("\nNormalized Live Range: " ^^ "%d") in
@@ -616,22 +622,25 @@ let regalloc translate_var (f: 'info func) : unit func =
   Glob_options.eprint Compiler.Splitting  (Printer.pp_func ~debug:true) f;
   let lf = Liveness.live_fd true f in
   let vars, nv = collect_variables false f in
-  (* DEBUG print *)
+  (* DEBUG open file for print *)
   let openFile =
       if !Glob_options.regdebug <> ""
       then Some (open_out !Glob_options.regdebug)
       else None
   in
+  (*DEBUG - get vars*)
   let listAux = print_vars vars in
   let eqc, tr, fr = collect_equality_constraints "Regalloc" x86_equality_constraints vars nv f in
   let vars = normalize_variables vars eqc in
-  (*DEBUG*)
+  (*DEBUG - get normalize vars*)
   let listAux = print_normalize_vars listAux vars in
   let conflicts = collect_conflicts vars tr lf in
+  (*DEBUG - create pointer for list*)
   let listRef = ref listAux in
   let a =
     allocate_forced_registers translate_var vars conflicts f IntMap.empty |>
     greedy_allocation vars nv conflicts fr |>
+    (*DEBUG - get reg allocation*)
     subst_of_allocationP openFile listRef vars
   in Subst.gsubst_func (fun ty -> ty) a f
     |> Ssa.remove_phi_nodes
