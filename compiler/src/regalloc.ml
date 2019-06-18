@@ -567,7 +567,7 @@ let print_allocation l v m w =
       in
       (*DEBUG - remove elem from list, in order to dont print duplicated vars (with same id) *)
       l := List.filter (fun e -> fst e <> fst elem) !l;
-      Printf.sprintf "%s%s\nTo: %s\n\n" (snd elem) (print_locs v.v_dloc m) w.v_name
+      Printf.sprintf "%s%s\nTo: %s.%d\n\n" (snd elem) (print_locs v.v_dloc m) w.v_name (Prog.int_of_uid w.v_id)
       )
     else ""
     )
@@ -596,7 +596,7 @@ let subst_of_allocationP o l (vars: int Hv.t)
 (*DEBUG*)
 let print_vars vars =
     let lvars = Hv.to_list vars in
-    let form = ("Name: %s" ^^ "\nId: %d" ^^ "\nCollected Live Range: %d") in
+    let form = ("Name: %s" ^^ ".%d" ^^ "\nCollected Live Range: %d") in
     List.map (fun (f,s) -> (Prog.int_of_uid f.v_id, Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) s, s)) lvars
 
 (*DEBUG*)
