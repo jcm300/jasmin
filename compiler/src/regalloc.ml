@@ -543,6 +543,36 @@ let subst_of_allocation (vars: int Hv.t)
   with Not_found -> Pvar (q v)
 
 (*DEBUG*)
+let subst_of_allocationP (vars: int Hv.t)
+    (a: allocation) (v: var_i) : expr =
+  let m = L.loc v in
+  let v = L.unloc v in
+  let q x = L.mk_loc m x in
+  try
+    let i = Hv.find vars v in
+    let w = IntMap.find i a in
+    (*DEBUG*)
+    let form = ("\tName: %s" ^^ "\n\tId: %d") in
+    let print_loc loc = if fst loc.L.loc_start <> -1 
+                        then L.tostring loc
+                        else ""
+    in
+    let print_locs loc1 loc2 = 
+      let l1 = print_loc loc1 in
+      let l2 = print_loc loc2 in
+      if l1 <> "" then
+        if l2 <> "" then Printf.sprintf "\n\tFile Location: %s and %s" l1 l2
+                    else Printf.sprintf "\n\tFile Location: %s" l1
+      else 
+        if l2 <> "" then Printf.sprintf "\n\tFile Location: %s" l2
+        else ""
+    in
+    let st f = Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) in
+    let () = Printf.printf "%s%s\n\tTo: %s\n\n" (st v) (print_locs v.v_dloc m) w.v_name in
+    Pvar (q w)
+  with Not_found -> Pvar (q v)
+
+(*DEBUG*)
 let print_v_kind = function
     | Const -> "Const"
     | Stack -> "Stack"
@@ -559,7 +589,7 @@ let print_dloc dloc =
 (*DEBUG*)
 let print_vars vars openFile =
     let lvars = Hv.to_list vars in
-    let form = ("Variable:\n\tName: %s" ^^ "\n\tId: %d" ^^ "\n\tKind: %s" ^^ "\n\tFile Location:\n%s" ^^ "\n\tFuture Reg: %d" ^^ "\n") in
+    let form = ("Variable:\n\tName: %s" ^^ "\n\tId: %d" ^^ "\n\tKind: %s" ^^ "\n\tFile Location:\n%s" ^^ "\n\tLive Range: %d" ^^ "\n") in
     let st = List.map (fun (f,s) -> Printf.sprintf form f.v_name (Prog.int_of_uid f.v_id) (print_v_kind f.v_kind) (print_dloc f.v_dloc) s) lvars in
     Printf.fprintf openFile "%s" (String.concat "\n" st)
 
@@ -598,6 +628,16 @@ let print_conflicts o conflicts =
                             )) conflicts
                         )
 
+let print_l_regs vars openFile = 
+  let form = ("Variable:\n\tName: %s" ^^ "\n\tId: %d" ^^ "\n\tKind: %s" ^^ "\n") in
+  let st = List.map (fun x -> Printf.sprintf form x.v_name (Prog.int_of_uid x.v_id) (print_v_kind x.v_kind)) vars in
+  Printf.fprintf openFile "%s" (String.concat "\n" st)
+
+let print_regs vars o =
+    match o with
+    | None -> ()
+    | Some openFile -> (Printf.fprintf openFile "Regs:\n"; print_l_regs vars openFile)
+
 let regalloc translate_var (f: 'info func) : unit func =
   let f = fill_in_missing_names f in
   let f = Ssa.split_live_ranges false f in
@@ -611,21 +651,20 @@ let regalloc translate_var (f: 'info func) : unit func =
       else None
   in
   print_collect_vars openFile vars nv ;
+  print_regs !X64.all_registers openFile;
   let eqc, tr, fr = collect_equality_constraints "Regalloc" x86_equality_constraints vars nv f in
-  (*DEBUG*)
-  (*print_equality_constraints openFile eqc tr fr ;*)
   let vars = normalize_variables vars eqc in
   (*DEBUG*)
   print_normalize_vars openFile vars ;
   let conflicts = collect_conflicts vars tr lf in
   (*DEBUG*)
-  print_conflicts openFile conflicts ;
+  (*print_conflicts openFile conflicts ;*)
   let a =
     allocate_forced_registers translate_var vars conflicts f IntMap.empty |>
     greedy_allocation vars nv conflicts fr |>
-    subst_of_allocation vars
+    subst_of_allocationP vars
   in Subst.gsubst_func (fun ty -> ty) a f
-   |> Ssa.remove_phi_nodes
+    |> Ssa.remove_phi_nodes
 
 let reverse_varmap (vars: int Hv.t) : var IntMap.t =
   Hv.fold (fun v i m -> IntMap.add i v m) vars IntMap.empty
